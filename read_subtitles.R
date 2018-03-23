@@ -8,7 +8,7 @@ library(ggplot2)
 
 rm(list=ls())
 
-number_of_seasons  <- 5
+number_of_seasons  <- 9
 list_episode_df    <- vector(mode = "list", length = number_of_seasons) 
 season_number_list <- c(1:number_of_seasons) 
 
@@ -64,9 +64,14 @@ all_srts_df %>%
     geom_bar(aes(y = last_second),      stat = "identity", fill = "blue") +
     facet_wrap(~season_number, scales = "free")
 
+all_srts_df %>%
+  fwrite("./../Data/Text Mining Final Project/all_subtitles_df.csv")
 
-all_srts_df %>% 
-  filter(season_number == 3 & episode_number == 4)
+all_srts_df %>%
+  save(file="./../Data/Text Mining Final Project/all_srts_df.Rda")
+
+# all_srts_df %>% 
+#   filter(season_number == 3 & episode_number == 4)
 
 
 
