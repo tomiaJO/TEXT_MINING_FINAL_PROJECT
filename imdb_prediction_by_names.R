@@ -29,13 +29,9 @@ full_episode_text <- full_episode_text %>%
 
 #########################
 ## just using first names
-first_name <- c("sheldon", "leonard", "penny",
-                "howard", "amy", "raj", "bernadette",
-                "stuart", "zack", "rajesh", "emily",
-                "leslie", )
+
 
 ##show example with simply "raj" vs "sheldon" in the blog!
-
 first_names <- c("howard",
                 "penny",
                 "leonard",
