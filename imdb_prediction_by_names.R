@@ -90,8 +90,7 @@ episodes <- fnames_in_episodes %>%
 
 
 ##reading in imdb scores
-imdb_scores <- fread("./../Data/Text Mining Final Project/imdb_scores.csv")
-imdb_scores <- imdb_scores %>%
+imdb_scores <- fread("./../Data/Text Mining Final Project/imdb_scores.csv") %>%
                  tidyr::separate(col    = `Episode title`,
                                  into   = c("episode_number", "episode_title"),
                                  #sep    = ".",
@@ -100,15 +99,93 @@ imdb_scores <- imdb_scores %>%
                                  fill   = "warn") %>%
                  mutate(episode_number = as.integer(episode_number)) %>% 
                  mutate(episode_id = paste("s", Season, 
-                                           "e", episode_number, sep = ""))
+                                           "e", episode_number, sep = "")) %>%
+                 rename("Episode" = "episode_number") %>%
+                 rename("Title" = "episode_title")  %>%
+                 mutate(episode_id = factor(episode_id, levels = episode_order$episode_id))
+
+#df for prediction
+episodes_w_scores <- imdb_scores %>%
+                       inner_join(episodes, by = "episode_id") %>%
+                       select(-Season, -Episode, -Title)
 
 
-head(imdb_scores)
-imdb_scores %>% nrow()
-episodes %>% nrow()
-imdb_scores_name_counts <- imdb_scores %>%
-  inner_join(name_counts, by = c("season_number", "episode_number")) %>%
-  mutate(episode_id = paste("s", season_number, 
-                            "e", episode_number, sep = "")) %>%
-  select(-season_number, -episode_number, -episode_title)
+##let's predict
+training_ratio <- 0.75
 
+set.seed(93) #for reproducibility
+train_indices <- createDataPartition(y = episodes_w_scores[["IMDB Score"]],
+                                     times = 1,
+                                     p = training_ratio,
+                                     list = FALSE)
+
+data_train <- episodes_w_scores[train_indices, ]
+data_test  <- episodes_w_scores[-train_indices, ]
+
+episodes_w_scores %>% nrow()
+data_train %>% nrow()
+data_test %>% nrow()
+
+#fitting a model
+train_control <- trainControl(method = "cv", number = 5)
+
+glimpse(episodes_w_scores)
+
+set.seed(93)
+glm_fit <- train(`IMDB Score` ~ . -episode_id,
+                 method = "glm",
+                 data = data_train,
+                 trControl = train_control,
+                 preProcess = c("center", "scale"))
+
+#####################################################
+##sidenote for evaluating performance
+glm_predictions <- predict.train(glm_fit, newdata = data_test)
+test_truth      <- data_test$`IMDB Score` 
+
+actual_vs_predicted <- cbind(predictions = glm_predictions, actual = test_truth) %>% data.frame()
+RMSE <- function(x, true_x) sqrt(mean((x - true_x)^2))
+
+#RMSE vs stddev
+RMSE(actual_vs_predicted$predictions, actual_vs_predicted$actual)
+sd(data_test$`IMDB Score`)
+
+#plotting pred vs actual
+actual_vs_predicted %>%
+  ggplot(aes(x= actual, y= predictions)) + 
+    geom_point() + 
+    geom_smooth(method = 'lm')
+#####################################################
+
+#let's analyze those coefficients we are here for!
+coefficients <- coef(glm_fit$finalModel)[-1]
+coefficients <- data.frame(Name      = names(coefficients), 
+                           beta      = coefficients,
+                           row.names = NULL) %>%
+                mutate(Name = reorder(Name, beta))
+
+##TODO: tidy up
+coefficients %>%
+  ggplot(aes(x = Name, y = beta)) +
+  geom_bar(stat = "identity") +
+  coord_flip()
+
+
+episodes_w_scores %>%
+  ggplot(aes(x = Sheldon, y = `IMDB Score`)) +
+  geom_point() +
+  geom_smooth(method = 'lm')
+
+episodes_w_scores %>%
+  ggplot(aes(x = Emily, y = `IMDB Score`)) +
+  geom_point() +
+  geom_smooth(method = 'lm')
+
+
+imdb_scores %>%
+  ggplot(aes(x = Episode, y = `IMDB Score`)) +
+  geom_point(alpha = 0.1) +
+  facet_grid(~Season)
+
+##TODO: chr progress by season, episode. progress = # of mentions
+##TODO: top3 vs bottom 3 episodes
