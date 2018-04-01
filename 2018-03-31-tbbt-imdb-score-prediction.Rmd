@@ -1,5 +1,5 @@
 ---
-title: "TBBT (Tidy)Text analysis Series 1 - IMDB scores and character mentions"
+title: "TBBT (Tidy)Text analysis 1 - IMDB scores and character mentions"
 author: "Tamas Koncz"
 date: '2018-03-31'
 slug: tbbt-imdb-score-regression
@@ -13,13 +13,26 @@ categories: text analysis
 knitr::opts_chunk$set(warning = FALSE)
 knitr::opts_chunk$set(message = FALSE)
 
+library(knitr)
 library(tidytext)
 library(dplyr)
 library(data.table)
 library(stringr)
 library(ggplot2)
+library(gridExtra)
 library(caret)
 ```
+
+Welcome to the first post in my 'The Big Bang Theory (Tidy)Text analysis' mini-series, and with that, to the _very first post on my blog_!  
+  
+Recently I was taking a class on 'Data Science on Unstructured Text Data', for which our final project was to create a tidyverse text analysis of any topic of our choice.  
+  
+While originally I set my sight on some deep topics, I ended up with something lighter this time. What you need to know about me is that I'm quite addicted to spending my time in front of different TV series. TBBT used to be one of my favorites - and while the series lost some of its brilliance over the years, I still thought its body of many seasons should be great material for my analysis (also,   lucky for me, Silicon Valley can fill in for my need of some good nerdy humor). 
+  
+For this post what I was interested in is if the frequency of certain names appearing has some connection to an episode's success (in this case, measured by the average rating of users on [IMDB](https://imdb.com)).  
+For the purposes of this excercise, names can appear in any format - the point is characters being mentioned in one way or another.
+
+During this post, I'll share bits of code to guide through my analysis - if you are interested in more, please refer to my [github page](https://github.com/tomiaJO/TEXT_MINING_FINAL_PROJECT).
 
 ```{r, echo = FALSE}
 tbbt_subtitles <- readRDS("C:/Users/tkonc/Documents/Data/Text Mining Final Project/all_srts_df.rds")
@@ -42,21 +55,26 @@ full_episode_text <- full_episode_text %>%
                        group_by(episode_id) %>% 
                        summarize(episode_full_text = paste0(Text, collapse = " "))
 ```
+**Let's dive into the details!**  
+  
+  
+The data originally looked like as below[^1]. The full spoken text for each episode was one row, marked by 'episode_id'. The data did not contain any metadata about speakers, or any contextual information, just the senteces that characters said during the show.  
+  
+A glimpse into how it looked when I started:    
 
-For this analysis, the original data format looked like as below^1^. The full spoken text for each episode was one row, marked by 'episode_id'. The data did not contain any metadata about speakers, or any contextual information, just the senteces that characters said during the show.
-
-```{r}
-head(full_episode_text)
+```{r, echo = FALSE}
+full_episode_text %>%
+  mutate(episode_full_text = paste(substr(episode_full_text, 1, 125), "...", sep = "")) %>%
+  head(3) %>%
+  kable()
 ```
-
-What I was interested in is whether the frequency of certain names appearing can be used for predicting an episode's success (in this case, measured by the average rating of users on [IMDB](https://imdb.com)).  
   
 The first step I had to do is extract all words from the above format, using the unnest_tokens function:
-```{r}
+```{r, echo = 1}
 words_by_episode <- full_episode_text %>%
                       unnest_tokens(output = word, input = episode_full_text)
 
-head(words_by_episode, 3)
+head(words_by_episode, 5) %>% kable()
 ```
 
 The only "words" that I needed were the character names mentioned. However, simply selecting lines based on whether they contain names or not  would not work.  
@@ -66,13 +84,15 @@ words_by_episode %>%
   filter(str_detect(word, "raj")) %>%
   select(word) %>%
   unique() %>%
-  rename("Lines containing 'raj'" = "word")
+  rename("Lines containing 'raj'" = "word") %>%
+  kable()
 
 words_by_episode %>%
   filter(str_detect(word, "sheldon")) %>%
   select(word) %>%
   unique() %>%
-  rename("Lines containing 'sheldon'" = "word")
+  rename("Lines containing 'sheldon'" = "word") %>%
+  kable()
 
 ```
 
@@ -81,21 +101,10 @@ To handle this, I create a vector containing regular expressions, custom-made fo
 (For most names this is still simply the name - I had to review one-by-one to decide on the right approach.)  
 
 ```{r}
-first_names_for_regex <- c("howard",
-                           "penny",
-                           "leonard",
-                           "sheldon",
-                           "^raj[e']?",
-                           "^(sh)?amy", 
-                           "^bern[ias]",
-                           "stuart",
-                           "zack",
-                           "emil[ey]",
-                           "leslie",
-                           "barry",
-                           "priya",
-                           "stephanie",
-                           "lucy")
+first_names_for_regex <- c("howard",     "penny",      "leonard",     "sheldon",
+                           "^raj[e']?",  "^(sh)?amy",  "^bern[ias]",  "stuart",
+                           "zack",       "emil[ey]",   "leslie",      "barry",
+                           "priya",      "stephanie",  "lucy")
 ```
 
 This vector can be merged into one regex, that we can use for filtering on the "word" column:
@@ -113,21 +122,10 @@ fnames_in_episodes$word %>% unique()
 ```
 
 ```{r}
-first_names <- c("Howard",
-                 "Penny",
-                 "Leonard",
-                 "Sheldon",
-                 "Raj",
-                 "Amy", 
-                 "Bernadette",
-                 "Stuart",
-                 "Zack",
-                 "Emily",
-                 "Leslie",
-                 "Barry",
-                 "Priya",
-                 "Stephanie",
-                 "Lucy")
+first_names <- c("Howard",  "Penny",    "Leonard",     "Sheldon",
+                 "Raj",     "Amy",       "Bernadette", "Stuart",
+                 "Zack",    "Emily",     "Leslie",     "Barry",
+                 "Priya",   "Stephanie", "Lucy")
 
 first_names_mapping <- data.table(regex = first_names_for_regex,
                                   name  = first_names)
@@ -150,7 +148,8 @@ A small glimpse into the format we arrived at:
 fnames_in_episodes %>%
   filter(name == "Leonard") %>%
   select(word, name) %>%
-  unique()
+  unique() %>%
+  kable()
 ```
 
 
@@ -180,21 +179,24 @@ nc_medians <- name_counts %>%
 ggplot(data = name_counts, aes(x = name, y = name_appear_count, color = name)) + 
   geom_jitter(alpha = .50, width = 0.25) +
   geom_hline(data = nc_medians, aes(yintercept = nac_med), 
-             size = 1.1, linetype="dashed", color = "black") +
+             size = 1.2, linetype="longdash") +
   facet_wrap(~name, scales = "free_x", ncol = 15) +
   labs(title = "How many times a name appeared across episodes?",
        y = "",
        x = "",
        caption = "Dashed lines encode averages\nNon-mentions were counted as 0") +
   theme_minimal() +
-  theme(plot.title = element_text(size = 14, face = "bold")) +
+  theme(plot.title   = element_text(size = 14, face = "bold")) +
+  theme(axis.text    = element_text(size = 12)) +
+  theme(strip.text.x = element_text(size = 12)) +
   theme(plot.caption = element_text(face = "italic")) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
   theme(legend.position = "none")
 ```
 
 
 
-We can then just join the IMDB scores based on episode ids^2^:
+We can then just join the IMDB scores based on episode ids:[^2]
 ```{r, echo = FALSE}
 imdb_scores <- fread("C:/Users/tkonc/Documents/Data/Text Mining Final Project/imdb_scores.csv") %>%
                  tidyr::separate(col    = `Episode title`,
@@ -245,7 +247,7 @@ glm_fit <- train(`IMDB Score` ~ . -episode_id,
                  preProcess = c("center", "scale"))
 ```
 
-When I ran the model I deemed it good enough to draw some conclusions, so it's time to take a look at those coefficients^3^.
+When I ran the model I deemed it good enough to draw some conclusions, so it's time to take a look at those coefficients (see end notes on model robustness).
 ```{r}
 coefficients <- coef(glm_fit$finalModel)[-1]
 coefficients <- data.frame(Name      = names(coefficients), 
@@ -256,43 +258,59 @@ coefficients <- data.frame(Name      = names(coefficients),
 ```
 
 Putting the results into a nice visual:  
-```{r, echo = FALSE}
+```{r, echo = FALSE, fig.align = 'center', fig.width=7, fig.height=4}
 coefficients %>%
   ggplot(aes(x = Name)) +
-  geom_pointrange(aes(ymin = 0, ymax = beta, y = beta, color = Impact), size = 1.15) +
+  geom_pointrange(aes(ymin = 0, ymax = beta, y = beta, color = Impact), size = 1.10) +
   labs(title    = "Impact of character being mentioned on IMDB scores",
-       subtitle = "Based on GLM beta coefficients",
-       x        = "Character",
-       y        = "Beta coefficient") +
+       x        = "",
+       y        = "",
+       caption  = "Based on GLM's Beta Coefficients") +
   coord_flip() +
   theme_minimal() +
+  theme(plot.title   = element_text(size = 14, face = "bold")) +
+  theme(axis.text    = element_text(size = 12)) + 
+  theme(plot.caption = element_text(face = "italic")) +
   theme(legend.position="none")
+```
+
+Let's interpret the above: the most positive impact comes from Sheldon, Howard, and Penny, while the most negative is from Emily, Stuart, Leonard, and Amy.  
+Every time Sheldon is mentioned in some context, we expect an 0.08 higher IMDB score for the given episode. Every time Amy is mentioned in some context, we expect an 0.06 lower IMDB score for the given episode.
+```{r, echo = FALSE, fig.align='center', fig.width=9, fig.height=3}
+p1 <- episodes_w_scores %>%
+        ggplot(aes(x = Sheldon, y = `IMDB Score`)) +
+        geom_point(alpha = .8, color = "darkgreen") +
+        geom_smooth(method = 'lm', color = "lightgreen") +
+        labs(title = "Sheldon",
+             x     = "Mentions") +
+        theme_minimal() +
+        theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+p2 <- episodes_w_scores %>%
+        ggplot(aes(x = Amy, y = `IMDB Score`)) +
+        geom_point(alpha = .8, color = "orange") +
+        geom_smooth(method = 'lm', color = "yellow") +
+        labs(title = "Amy",
+             x     = "Mentions",
+             y     = "") +
+        theme_minimal() +
+        theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+grid.arrange(p1, p2, ncol = 2)
+```
   
-
-```
-
-Let's interpret the below: the most positive impact comes from Sheldon, Howard, and Penny, while the most negative is from Emily, Stuart, Leonard, and Amy.  
-Every time Sheldon is mentioned in some context, we expect an 0.08 higher IMDB score for the given episode.
-```{r}
-episodes_w_scores %>%
-  ggplot(aes(x = Sheldon, y = `IMDB Score`)) +
-  geom_point() +
-  geom_smooth(method = 'lm')
-
-episodes_w_scores %>%
-  ggplot(aes(x = Emily, y = `IMDB Score`)) +
-  geom_point() +
-  geom_smooth(method = 'lm')
-```
+  
+This should give us some insight into who are the viewer favorites of the show - but we should not take the results (just as the topic) too seriously.  
+The methodology is clearly not very robust - this is, after all, is more for fun than for "science". 
 
 
-^1^: I'm working on a post that describes how to gather subtitle data and turn it into a tidy format.  
+***
+Notes:  
 
-^2^: Data was downloaded from https://www.opensubtitles.org/en/ssearch/sublanguageid-eng/idmovie-27926, where they nicely collected live IMDB scores for all episodes of TBBT.  
-
-^3^: In the post I have not gone into detail about the model's predictive performance, so let's spend a minute on that here.
-
-```{r}
+In the post I have not gone into detail about robustness of the model's fit, so let's spend a minute on that here.  
+  
+One thing to look at is the RMSE on the set-aside test set vs the standard deviation of IMDB Scores:
+```{r, echo = FALSE}
 glm_predictions <- predict.train(glm_fit, newdata = data_test)
 test_truth      <- data_test$`IMDB Score` 
 
@@ -300,17 +318,27 @@ actual_vs_predicted <- cbind(predictions = glm_predictions, actual = test_truth)
 RMSE <- function(x, true_x) sqrt(mean((x - true_x)^2))
 
 #RMSE vs stddev
-RMSE(actual_vs_predicted$predictions, actual_vs_predicted$actual)
-sd(data_test$`IMDB Score`)
+rmse_test   <- RMSE(actual_vs_predicted$predictions, actual_vs_predicted$actual)
+stddev_test <- sd(data_test$`IMDB Score`)
 
-#####################################################
-##sidenote for evaluating performance
+print(paste("RMSE: ", round(rmse_test, 2), ", Std. Dev.: ", round(stddev_test, 2), sep = ""))
+```
+That the values are in the same ballpark signals that even if just weakly, but the model does have some descriptive power.  
 
-
-#plotting pred vs actual
+```{r, echo = FALSE, fig.align='left', fig.height=3, fig.width=4}
 actual_vs_predicted %>%
   ggplot(aes(x= actual, y= predictions)) + 
-    geom_point() + 
-    geom_smooth(method = 'lm')
-#####################################################
+        geom_point(alpha = 0.75, color = "darkgreen") +
+        geom_smooth(method = 'lm', color = "green") +
+        labs(title    = "Actual vs Predicted IMDB scores ",
+             subtitle = "Measured on the held-out set",
+             x        = "Actual",
+             y        = "Predicted") +
+        theme_minimal() +
+        theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 ```
+
+
+[^1]: I'm working on a post that describes how to gather subtitle data and turn it into a tidy format.  
+[^2]: Data was downloaded from https://www.opensubtitles.org/en/ssearch/sublanguageid-eng/idmovie-27926, where they nicely collected live IMDB scores for all episodes of TBBT.  
+
