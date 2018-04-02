@@ -1,0 +1,180 @@
+---
+title: "TBBT (Tidy)Text analysis 2 - TBD"
+author: "Tamas Koncz"
+date: '2018-04-02'
+slug: tbbt-genders
+tags:
+- R
+- tidytext
+categories: text analysis
+---
+
+```{r setup, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+
+library(knitr)
+library(tidytext)
+library(dplyr)
+library(data.table)
+library(stringr)
+library(ggplot2)
+library(gridExtra)
+```
+
+My inspiration for this post was Julia Silge post's on pudding.cool, titled ["She giggles, he gallops"](https://pudding.cool/2017/08/screen-direction/).  
+Julia examines 2,000 film scripts, to uncover certain "gender bias" - notably, she compared what are the most frequent words following "he" and "she" in the scripts.  
+
+I'm going to apply the same idea to the subtitle data of The Big Bang Theory, but, before we dive in - this post is the second in my "TBBT (Tidy)Text analysis" mini-series, if interested, you can find the first one [here](https://tomiajo.github.io/blog/tbbt-imdb-score-regression/), in which I look at the relation between average IMDB scores of episodes and dominating character "mentions".   
+  
+
+**And now, let's get rolling!** 
+  
+Data-wise, our starting point is the same as in the first post:
+```{r, echo = FALSE}
+rm(list=ls())
+
+tbbt_subtitles <- readRDS("C:/Users/tkonc/Documents/Data/Text Mining Final Project/all_srts_df.rds")
+
+full_episode_text <- tbbt_subtitles %>% 
+                       select(episode_number, season_number, Text) %>%
+                       mutate(episode_id = paste("s", season_number, 
+                                                 "e", episode_number, sep = ""))
+
+episode_order <- full_episode_text %>%
+                   select(season_number, episode_number, episode_id) %>%
+                   distinct() %>%
+                   arrange(season_number, episode_number) %>%
+                   select(episode_id) %>%
+                   as.vector()
+
+##creates 1 row / episode format                       
+full_episode_text <- full_episode_text %>%
+                       mutate(episode_id = factor(episode_id, levels = episode_order$episode_id)) %>%
+                       group_by(episode_id) %>% 
+                       summarize(episode_full_text = paste0(Text, collapse = " "))
+
+full_episode_text %>%
+  mutate(episode_full_text = paste(substr(episode_full_text, 1, 125), "...", sep = "")) %>%
+  head(3) %>%
+  kable()
+```
+
+The approach I'm going to take is simple: look at two-word pairs, where the first world defines the gender, and the second one is the word we are going to analyze.  
+  
+First, we need to slice the text into bigrams:
+```{r}
+bigrams <- full_episode_text %>%
+             unnest_tokens(output = bigram, 
+                           input  = episode_full_text, 
+                           token  = "ngrams", 
+                           n      = 2)
+```
+
+```{r, echo = FALSE}
+bigrams %>%
+  head(4) %>%
+  kable()
+```
+
+I'll cross reference this bigrams list with a gender "lexicon" I have defined earlier, which apart from the usual "he/she", also contains the names of the important characters from the show (only first 6 lines shown below - for full list, please refer to my [github](https://github.com/tomiaJO/TEXT_MINING_FINAL_PROJECT/blob/master/gender_word_lexicon.csv)):  
+```{r, echo = FALSE}
+#### import gender lexicon ####
+gender_word_lexicon <- fread("C:/Users/tkonc/Documents/Data/Text Mining Final Project/gender_word_lexicon.csv")
+
+gender_words_regex <- paste0(gender_word_lexicon$word, collapse = '|')
+gender_words_regex <- paste("^(", gender_words_regex, ") ", sep = "")
+
+gender_word_lexicon %>%
+  head(6) %>%
+  kable()
+```
+
+Let's use this lexicon as a filter (via simple regex), and create separte columns for the two words of the bigrams as well:
+```{r}
+gender_bigrams <- bigrams %>%
+                    filter(str_detect(bigram, gender_words_regex)) %>%
+                    mutate(gender_word = str_split(bigram, pattern = " ", n = 2, simplify = TRUE)[,1],
+                           word        = str_split(bigram, pattern = " ", n = 2, simplify = TRUE)[,2]) %>%
+                    inner_join(gender_word_lexicon, by = c("gender_word" = "word")) %>%
+                    select(gender, word)
+```
+
+What I am going to do exactly with these word pairs?  
+  
+My original idea was to run a tf-idf analysis, to "cluster" the most typical words for each gender.  
+However, when I first ran a trial, I noticed something interesting: many words in the "she" category were sensual ones ("feel", "kissed", "smiled"...), while for "he" most words were pretty general ("talk", "sit", "boy"...).  
+  
+This _(and the sad fact that most of the words appeared only once or twice, making it hard to do meaningful tf-idf)_ made me pivot somewhat from my starting idea - and I decided to group words by sentiments, and compare those for the two genders.  
+  
+For this, I'm using the NRC lexicon, which is built-in accessible in the tidytext R package.
+```{r, fig.align='center', fig.width=5, fig.height=3}
+sentiments_nrc <- get_sentiments(lexicon = "nrc")
+
+sentiments_nrc %>%
+  group_by(sentiment) %>%
+  summarize(n = n()) %>%
+  mutate(sentiment = reorder(sentiment, n)) %>%
+  ggplot(aes(x=sentiment, y=n)) +
+    geom_bar(stat = "identity", fill = "springgreen4") +
+    labs(title = "Words in the NRC sentiment lexicon",
+         x     = "Word count",
+         y     = "Sentiment") +
+    coord_flip() +
+    theme_minimal() +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+A glimpse into the sentiment lexicon's categories... The lexicon does not contain all English words, but should be more than enough for a light analysis of subtitles.
+
+```{r}
+gender_bigrams_w_nrc <- gender_bigrams %>%
+                          inner_join(sentiments_nrc, by = "word")
+```
+
+In a short step we match up the sentiments with the bigram collection (above), and the results are ready to be visualized[^1]:
+
+```{r, echo = FALSE, fig.width=15, fig.height=7, fig.align='center'}
+gender_bigrams_w_nrc %>%
+  count(gender, sentiment, sort = T) %>%
+  tidyr::spread(key = gender, value = n, fill = 0) %>%
+  ungroup() %>%
+  mutate(male_total     = sum(male),
+         female_total   = sum(female)) %>%
+  mutate(male_ratio     = male / male_total,
+         female_ratio   = female / female_total) %>%
+  mutate(ratio          = male_ratio / female_ratio) %>%
+  mutate(relative_ratio = 1 - ratio) %>%
+  mutate(sentiment      = reorder(sentiment, -relative_ratio)) %>%
+  mutate(direction      = ifelse(relative_ratio >= 0, "he", "she")) %>%
+  mutate(he_sentiment   = ifelse(direction == "he",  toupper(as.character(sentiment)), ""),
+         she_sentiment  = ifelse(direction == "she", toupper(as.character(sentiment)), "")) %>%
+  ggplot((aes(sentiment, relative_ratio, fill = direction))) + 
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = he_sentiment),  hjust =  1.05, 
+                                          fontface = "bold", color = "grey50") +
+    geom_text(aes(label = she_sentiment), hjust = -0.05, 
+                                          fontface = "bold", color = "grey50") +
+    labs(title = "Relative sentiment frequencies for the two genders",
+         x     = "",
+         y    = "") +
+    scale_y_continuous(labels = c("1.5x", "1.25x", "same", "1.25x", "1.5x"), 
+                       limits = c(-0.5, 0.5)) +
+    scale_fill_manual(labels = c('Used more by "he"', 'Used more by "she"'),
+                        values = c("deepskyblue4" , "brown1")) +
+    coord_flip() +
+    theme_minimal() +
+    theme(panel.grid.major.y = element_blank()) +
+    theme(axis.title.y = element_blank(),
+          axis.text.y  = element_blank(),
+          axis.ticks.y = element_blank()) +
+    theme(plot.title   = element_text(size = 22, face = "bold", hjust = 0.5)) +
+    theme(legend.title    = element_blank(),
+          legend.position = "bottom",
+          legend.text     = element_text(size = 12))
+```
+
+There is a high likelihood that "he" will be angry in the context mentioned - while "she" is mostly in the positive.
+
+Footnotes:  
+
+[^1]: describe methodology
