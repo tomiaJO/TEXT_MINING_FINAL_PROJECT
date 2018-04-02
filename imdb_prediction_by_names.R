@@ -43,6 +43,7 @@ first_names_for_regex <- c("howard",
                            "emil[ey]",
                            "leslie",
                            "barry")
+##TODO: add stephanie, missy, alex, plimpton, priya, lucy, bert
 
 first_names_regex <- paste0(first_names_for_regex, collapse = '|')
 first_names_regex <- paste("(", first_names_regex, ")", sep = "")

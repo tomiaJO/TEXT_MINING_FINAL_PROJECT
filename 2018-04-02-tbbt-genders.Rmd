@@ -22,10 +22,11 @@ library(ggplot2)
 library(gridExtra)
 ```
 
-My inspiration for this post was Julia Silge post's on pudding.cool, titled ["She giggles, he gallops"](https://pudding.cool/2017/08/screen-direction/).  
+My inspiration to write this post was Julia Silge's ["She giggles, he gallops"](https://pudding.cool/2017/08/screen-direction/) on _pudding.cool_.  
 Julia examines 2,000 film scripts, to uncover certain "gender bias" - notably, she compared what are the most frequent words following "he" and "she" in the scripts.  
 
-I'm going to apply the same idea to the subtitle data of The Big Bang Theory, but, before we dive in - this post is the second in my "TBBT (Tidy)Text analysis" mini-series, if interested, you can find the first one [here](https://tomiajo.github.io/blog/tbbt-imdb-score-regression/), in which I look at the relation between average IMDB scores of episodes and dominating character "mentions".   
+I'm going to apply the same idea to the subtitle data of the TV series 'The Big Bang Theory'.   
+Just before we dive in - this post is the second in my "TBBT (Tidy)Text analysis" mini-series, if interested, you can find the first one [here](https://tomiajo.github.io/blog/tbbt-imdb-score-regression/), in which I look at the relation between average IMDB scores of episodes and dominating character "mentions".   
   
 
 **And now, let's get rolling!** 
@@ -60,7 +61,7 @@ full_episode_text %>%
   kable()
 ```
 
-The approach I'm going to take is simple: look at two-word pairs, where the first world defines the gender, and the second one is the word we are going to analyze.  
+The approach I'm taking is simple: look at all two-word pairs, where the first world defines the gender. The second word is what  we are going to analyze.  
   
 First, we need to slice the text into bigrams:
 ```{r}
@@ -105,12 +106,14 @@ What I am going to do exactly with these word pairs?
 My original idea was to run a tf-idf analysis, to "cluster" the most typical words for each gender.  
 However, when I first ran a trial, I noticed something interesting: many words in the "she" category were sensual ones ("feel", "kissed", "smiled"...), while for "he" most words were pretty general ("talk", "sit", "boy"...).  
   
-This _(and the sad fact that most of the words appeared only once or twice, making it hard to do meaningful tf-idf)_ made me pivot somewhat from my starting idea - and I decided to group words by sentiments, and compare those for the two genders.  
+This _(and the sad fact that most of the words appeared only once or twice, making it hard to do meaningful tf-idf in their raw format)_ made me pivot somewhat from my starting idea - and I decided to group words by sentiments, and compare those for the two genders.  
   
 For this, I'm using the NRC lexicon, which is built-in accessible in the tidytext R package.
-```{r, fig.align='center', fig.width=5, fig.height=3}
+```{r}
 sentiments_nrc <- get_sentiments(lexicon = "nrc")
+```
 
+```{r, echo = FALSE, fig.align='center', fig.width=5, fig.height=3}
 sentiments_nrc %>%
   group_by(sentiment) %>%
   summarize(n = n()) %>%
@@ -143,22 +146,23 @@ gender_bigrams_w_nrc %>%
   mutate(male_ratio     = male / male_total,
          female_ratio   = female / female_total) %>%
   mutate(ratio          = male_ratio / female_ratio) %>%
-  mutate(relative_ratio = 1 - ratio) %>%
-  mutate(sentiment      = reorder(sentiment, -relative_ratio)) %>%
-  mutate(direction      = ifelse(relative_ratio >= 0, "he", "she")) %>%
+  mutate(direction      = ifelse(ratio >= 1, "he", "she")) %>%
   mutate(he_sentiment   = ifelse(direction == "he",  toupper(as.character(sentiment)), ""),
          she_sentiment  = ifelse(direction == "she", toupper(as.character(sentiment)), "")) %>%
+  mutate(relative_ratio = ifelse(direction == "he", ratio - 1, (-1 / ratio) + 1)) %>%
+  mutate(sentiment      = reorder(sentiment, relative_ratio)) %>%
   ggplot((aes(sentiment, relative_ratio, fill = direction))) + 
     geom_bar(stat = "identity") +
     geom_text(aes(label = he_sentiment),  hjust =  1.05, 
-                                          fontface = "bold", color = "grey50") +
+                                          fontface = "bold", color = "antiquewhite4") +
     geom_text(aes(label = she_sentiment), hjust = -0.05, 
-                                          fontface = "bold", color = "grey50") +
+                                          fontface = "bold", color = "antiquewhite4") +
     labs(title = "Relative sentiment frequencies for the two genders",
          x     = "",
          y    = "") +
-    scale_y_continuous(labels = c("1.5x", "1.25x", "same", "1.25x", "1.5x"), 
-                       limits = c(-0.5, 0.5)) +
+    scale_y_continuous(labels = c("2x", "1.5x", "same", "1.5x", "2x"), 
+                       limits = c(-1.0, 1.0),
+                       breaks = seq(-1.0, 1.0, 0.5)) +
     scale_fill_manual(labels = c('Used more by "he"', 'Used more by "she"'),
                         values = c("deepskyblue4" , "brown1")) +
     coord_flip() +
@@ -173,8 +177,14 @@ gender_bigrams_w_nrc %>%
           legend.text     = element_text(size = 12))
 ```
 
-There is a high likelihood that "he" will be angry in the context mentioned - while "she" is mostly in the positive.
-
+There is a high likelihood that "she" will be angry in the context mentioned - while "he" is mostly in the positive.  
+Probably more interestingly, men are also a lot less likely to "exhibit" any sentiments - maybe their feelings are less talked about?(!)
+  
+None of this should be a starting point for deep conversations about gender roles in Hollywood - if you are looking for that, please head over to Julia's post I linked in the beginning.  
+  
+However, if you were looking for some ideas about what's in subtitles for some data analysis, I hope I could gave would you a nice glimpse.  
+  
+***
 Footnotes:  
 
-[^1]: describe methodology
+[^1]: Methodology used: first, I calculated the ratio of each sentiment group within genders (~= words belonging to the sentiment group / total words for gender). Then, I checked these within-gender frequencies across the two genders, which gave me the ratios - from here, I only had to tidy it up for visualization.

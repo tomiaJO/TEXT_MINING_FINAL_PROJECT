@@ -12,7 +12,6 @@ number_of_seasons  <- 9
 list_episode_df    <- vector(mode = "list", length = number_of_seasons) 
 season_number_list <- c(1:number_of_seasons) 
 
-##TODO: additional loop across seasons
 for(season_num in season_number_list) {
   
   dirPath  <- paste("./../Data/Text Mining Final Project/Season", season_num, sep = "")
@@ -68,7 +67,7 @@ all_srts_df %>%
   fwrite("./../Data/Text Mining Final Project/all_subtitles_df.csv")
 
 all_srts_df %>%
-  save(file="./../Data/Text Mining Final Project/all_srts_df.Rda")
+  saveRDS(file="./../Data/Text Mining Final Project/all_srts_df.rds")
 
 # all_srts_df %>% 
 #   filter(season_number == 3 & episode_number == 4)
